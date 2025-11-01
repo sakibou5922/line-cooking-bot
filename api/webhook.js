@@ -1,9 +1,15 @@
-import { Client } from "@line/bot-sdk";
+// CommonJS 版（Vercelでそのまま動く）
+const { Client } = require("@line/bot-sdk");
 
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(200).send("OK");
 
-  const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+  let body = {};
+  try {
+    body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+  } catch (e) {
+    console.error("JSON parse error:", e);
+  }
   const events = body.events || [];
 
   const client = new Client({
@@ -11,9 +17,21 @@ export default async function handler(req, res) {
     channelSecret: process.env.LINE_CHANNEL_SECRET,
   });
 
-  await Promise.all(events.map((ev) => handleEvent(ev, client)));
-  return res.status(200).send("OK");
-}
+  try {
+    await Promise.all(
+      events.map((ev) =>
+        handleEvent(ev, client).catch((err) => {
+          console.error("handleEvent error:", err);
+        })
+      )
+    );
+    return res.status(200).send("OK");
+  } catch (e) {
+    console.error("handler error:", e);
+    // LINE 側の再試行ループを避けるため 200 を返す
+    return res.status(200).send("OK");
+  }
+};
 
 async function handleEvent(event, client) {
   if (event.type !== "message" || event.message.type !== "text") return;
@@ -22,17 +40,16 @@ async function handleEvent(event, client) {
   if (/^(今日|献立|メニュー)/.test(text)) {
     return client.replyMessage(event.replyToken, {
       type: "text",
-      text: "今日の献立🎯\n① 鶏むね丼\n② さば水煮丼\n③ 豆腐チゲ\n→「美容メニュー」「栄養ログ」も試してね！",
+      text:
+        "今日の献立🎯\n① 鶏むね丼\n② さば水煮丼\n③ 豆腐チゲ\n→「美容メニュー」「栄養ログ」も試してね！",
     });
   }
-
   if (/^(美容|ダイエット)/.test(text)) {
     return client.replyMessage(event.replyToken, {
       type: "text",
       text: "美容×ダイエット💖 高タンパク・低脂質の候補を出すよ（実装中）",
     });
   }
-
   if (/^(栄養|ログ)/.test(text)) {
     return client.replyMessage(event.replyToken, {
       type: "text",
